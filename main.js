@@ -18,6 +18,14 @@ const handler = (req, res) => {
     res.end(`Connections: ${network.size} Storage: ${storage.size}\n`);
   } else if (req.method === "GET" && reqUrl.pathname === "/request") {
   } else if (req.method === "GET" && reqUrl.pathname === "/get") {
+    let reqKey = reqUrl.query.key;
+    if (storage.has(reqKey)) {
+      res.end(storage.get(reqKey));
+    } else {
+      retcode = 500;
+      res.writeHead(500, {"Content-Type": "text/plain"});
+      res.end("Resource not found\n");
+    }
   } else if (req.method === "POST" && reqUrl.pathname === "/store") {
     let body = "";
     req.on("data", chunk => {
