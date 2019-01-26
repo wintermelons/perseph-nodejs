@@ -8,7 +8,20 @@ const serverId = "localhost:" + port.toString();
 let network = new Set(),
     storage = new Map();
 
-const handler = (req, res) => {
+function forwardRequest(url) {
+    console.log("forwarding request", url);
+    return new Promise((resolve, reject) => {
+        request("http://" + url, (error, response, body) => {
+            if (error) reject(error);
+            if (response.statusCode != 200) {
+                reject('Invalid status code <' + response.statusCode + '>');
+            }
+            resolve(body);
+        });
+    });
+}
+
+const handler = async function(req, res) {
   let retcode = 200, start = new Date();
   console.log(serverId, "HTTP", req.httpVersion, start, req.method, req.url);
 
@@ -20,11 +33,41 @@ const handler = (req, res) => {
 
   // Request throughout the network for a key.
   } else if (req.method === "GET" && reqUrl.pathname === "/request") {
+    console.log(reqUrl.query, reqUrl.query.hops);
     let reqKey = reqUrl.query.key;
+    
+    let numHopsRemaining = 6;
+    if (reqUrl.query.hops !== undefined) {
+      numHopsRemaining = parseInt(reqUrl.query.hops) - 1;
+      if (numHopsRemaining <= 0) {
+        console.log("no hops remaining");
+        retcode = 500;
+        res.writeHead(500, {"Content-Type": "text/plain"});
+        res.end("Resource not found\n");
+        return;
+      }
+    }
+
     if (storage.has(reqKey)) {
       res.end(`${serverId}\n`);
     } else {
-      // ???
+      
+      //let networkArray = network.values();
+      //for(const peer in networkArray) {
+      for(const peer of network) {
+        try {
+          console.log("Executing request for peer", peer);
+          let p = await forwardRequest(peer + "/request?key=" + reqKey + "&hops=" + numHopsRemaining);
+          res.end(p);
+          return;
+        } catch (err) {
+            console.log("Did not find in peer", peer, err);
+          }
+      }
+
+      retcode = 500;
+      res.writeHead(500, {"Content-Type": "text/plain"});
+      res.end("Resource not found\n");
     }
 
   // Get the value of a key from node.
