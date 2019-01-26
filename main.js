@@ -9,8 +9,9 @@ let network = new Set(),
     storage = new Map();
 
 function forwardRequest(url) {
+    console.log("forwarding request", url);
     return new Promise((resolve, reject) => {
-        request(url, (error, response, body) => {
+        request("http://" + url, (error, response, body) => {
             if (error) reject(error);
             if (response.statusCode != 200) {
                 reject('Invalid status code <' + response.statusCode + '>');
@@ -36,26 +37,32 @@ const handler = async function(req, res) {
     let reqKey = reqUrl.query.key;
     
     let numHopsRemaining = 6;
-    if (reqUrl.query.hops) {
+    if (reqUrl.query.hops !== undefined) {
       numHopsRemaining = parseInt(reqUrl.query.hops) - 1;
       if (numHopsRemaining <= 0) {
         console.log("no hops remaining");
         retcode = 500;
         res.writeHead(500, {"Content-Type": "text/plain"});
         res.end("Resource not found\n");
+        return;
       }
     }
 
     if (storage.has(reqKey)) {
       res.end(`${serverId}\n`);
     } else {
-
-      for(const peer in network) {
+      
+      //let networkArray = network.values();
+      //for(const peer in networkArray) {
+      for(const peer of network) {
         try {
-          let p = await forwardRequest(peer + "/request?key=" + reqKey + "&hop=" + numHopsRemaining);
+          console.log("Executing request for peer", peer);
+          let p = await forwardRequest(peer + "/request?key=" + reqKey + "&hops=" + numHopsRemaining);
           res.end(p);
           return;
-        } catch (err) {}
+        } catch (err) {
+            console.log("Did not find in peer", peer, err);
+          }
       }
 
       retcode = 500;
