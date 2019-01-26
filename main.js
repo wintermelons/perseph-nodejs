@@ -20,6 +20,12 @@ const handler = (req, res) => {
 
   // Request throughout the network for a key.
   } else if (req.method === "GET" && reqUrl.pathname === "/request") {
+    let reqKey = reqUrl.query.key;
+    if (storage.has(reqKey)) {
+      res.end(`${serverId}\n`);
+    } else {
+      // ???
+    }
 
   // Get the value of a key from node.
   } else if (req.method === "GET" && reqUrl.pathname === "/get") {
