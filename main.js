@@ -3,7 +3,7 @@ const request = require("request");
 const url = require("url");
 
 const port = parseInt(process.argv[2]);
-const serverId = "p:" + port.toString();
+const serverId = "localhost:" + port.toString();
 
 let network = new Set(),
     storage = new Map();
@@ -14,9 +14,14 @@ const handler = (req, res) => {
 
   let reqUrl = url.parse(req.url, true);
 
+  // Get status of the server.
   if (req.method === "GET" && reqUrl.pathname === "/status") {
     res.end(`Connections: ${network.size} Storage: ${storage.size}\n`);
+
+  // Request throughout the network for a key.
   } else if (req.method === "GET" && reqUrl.pathname === "/request") {
+
+  // Get the value of a key from node.
   } else if (req.method === "GET" && reqUrl.pathname === "/get") {
     let reqKey = reqUrl.query.key;
     if (storage.has(reqKey)) {
@@ -26,6 +31,8 @@ const handler = (req, res) => {
       res.writeHead(500, {"Content-Type": "text/plain"});
       res.end("Resource not found\n");
     }
+  
+  // Store a key/value into the node locally.
   } else if (req.method === "POST" && reqUrl.pathname === "/store") {
     let body = "";
     req.on("data", chunk => {
@@ -36,6 +43,8 @@ const handler = (req, res) => {
       storage.set(data.key, data.value);
       res.end(`New key added ${data.key}\n`);
     });
+  
+  // Add a neighbor to the node.
   } else if (req.method === "POST" && reqUrl.pathname === "/connect") {
     let body = "";
     req.on("data", chunk => {
@@ -46,6 +55,8 @@ const handler = (req, res) => {
       network.add(data.endpoint);
       res.end(`Endpoint added ${data.endpoint}\n`);
     });
+
+  // 404 Not found.
   } else {
     retcode = 404;
     res.writeHead(404, {"Content-Type": "text/plain"});
