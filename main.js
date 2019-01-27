@@ -5,25 +5,37 @@ const url = require("url");
 const port = parseInt(process.argv[2]);
 const serverId = "localhost:" + port.toString();
 
-let network = new Set(),
-    storage = new Map();
+let network = new Set();
+let storage = new Map();
 
-function forwardRequest(url) {
-    console.log("forwarding request", url);
-    return new Promise((resolve, reject) => {
-        request("http://" + url, (error, response, body) => {
-            if (error) reject(error);
-            if (response.statusCode != 200) {
-                reject('Invalid status code <' + response.statusCode + '>');
-            }
-            resolve(body);
-        });
-    });
-}
+// Returns a promise of an outgoing GET resquest to url
+const forwardRequest = (url) => new Promise((resolve, reject) => {
+  request("http://" + url, (error, response, body) => {
+    if (error) reject(error);
+    if (response.statusCode != 200) {
+        reject(`Invalid status code: ${response.statusCode}`);
+    }
+    resolve(body);
+  });
+});
+
+// Returns a promise of a request body
+const receiveBody = (req) => new Promise((resolve, reject) => {
+  let body = "";
+  req.on("data", chunk => {
+    body += chunk.toString();
+  });
+  req.on("end", () => {
+    resolve(body);
+  });
+  req.on("error", (err) => {
+    reject(err);
+  });
+});
 
 const handler = async function(req, res) {
   let retcode = 200, start = new Date();
-  console.log(serverId, "HTTP", req.httpVersion, start, req.method, req.url);
+  console.log(serverId, "HTTP", req.httpVersion, start, "FROM", req.headers.referer, req.method, req.url);
 
   let reqUrl = url.parse(req.url, true);
 
@@ -33,14 +45,13 @@ const handler = async function(req, res) {
 
   // Request throughout the network for a key.
   } else if (req.method === "GET" && reqUrl.pathname === "/request") {
-    console.log(reqUrl.query, reqUrl.query.hops);
     let reqKey = reqUrl.query.key;
     
     let numHopsRemaining = 6;
     if (reqUrl.query.hops !== undefined) {
       numHopsRemaining = parseInt(reqUrl.query.hops) - 1;
       if (numHopsRemaining <= 0) {
-        console.log("no hops remaining");
+        console.log(serverId, "[debug] no hops remaining");
         retcode = 500;
         res.writeHead(500, {"Content-Type": "text/plain"});
         res.end("Resource not found\n");
@@ -52,17 +63,13 @@ const handler = async function(req, res) {
       res.end(`${serverId}\n`);
     } else {
       
-      //let networkArray = network.values();
-      //for(const peer in networkArray) {
-      for(const peer of network) {
+      // TODO: randomize the search order each time
+      for (const peer of network) {
         try {
-          console.log("Executing request for peer", peer);
           let p = await forwardRequest(peer + "/request?key=" + reqKey + "&hops=" + numHopsRemaining);
           res.end(p);
           return;
-        } catch (err) {
-            console.log("Did not find in peer", peer, err);
-          }
+        } catch (err) {}
       }
 
       retcode = 500;
@@ -83,27 +90,15 @@ const handler = async function(req, res) {
   
   // Store a key/value into the node locally.
   } else if (req.method === "POST" && reqUrl.pathname === "/store") {
-    let body = "";
-    req.on("data", chunk => {
-      body += chunk.toString();
-    });
-    req.on("end", () => {
-      let data = JSON.parse(body);
-      storage.set(data.key, data.value);
-      res.end(`New key added ${data.key}\n`);
-    });
+    let data = JSON.parse(await receiveBody(req));
+    storage.set(data.key, data.value);
+    res.end(`New key added ${data.key}\n`);
   
   // Add a neighbor to the node.
   } else if (req.method === "POST" && reqUrl.pathname === "/connect") {
-    let body = "";
-    req.on("data", chunk => {
-      body += chunk.toString();
-    });
-    req.on("end", () => {
-      let data = JSON.parse(body);
-      network.add(data.endpoint);
-      res.end(`Endpoint added ${data.endpoint}\n`);
-    });
+    let data = JSON.parse(await receiveBody(req));
+    network.add(data.endpoint);
+    res.end(`Endpoint added ${data.endpoint}\n`);
 
   // 404 Not found.
   } else {
